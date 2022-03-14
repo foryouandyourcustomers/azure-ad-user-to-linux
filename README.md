@@ -10,6 +10,9 @@ The elegant way would be to create our own pam.d modules but this makes everythi
 it needs to be. Instead, we use a simple script to retrieve Azure AD accounts and public keys and manage the 
 local users accordingly.
 
+The ssh public keys are stored in a Storage Account so we do not have to adapt any schemas or add complex user 
+manuals on how to add ssh keys to an Azure AD profile.
+
 ## Overview
 
 The script is executed as cronjob on each linux server (or it can be executed manually)
