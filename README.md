@@ -80,8 +80,32 @@ You won't be able to retrieve the password afterwards!
 }
 ```
 
-Next, we need to grant the service principal access to the Azure AD graph
+Next, we need to grant the service principal access to the Azure AD graph.
+The service principal requires 'User.Read.All' and 'Group.Read.All' permissions for Azure Graph.
 
+```bash
+# add user.read.all permissions
+# --api: the id of the azure graph api
+# --api-permission: the id of the user.read.all permission, the =Role at the end allows application permissions. 
+# --id: the id of the application created in the last step
+az ad app permission add \
+    --api 00000003-0000-0000-c000-000000000000 \
+    --api-permission df021288-bdef-4463-88db-98f22de89214=Role \
+    --id 7307b99d-b5a2-4ee7-b947-2fe8944baccf
+    
+# add group.read.all permissions
+az ad app permission add \
+    --api 00000003-0000-0000-c000-000000000000 \
+    --api-permission 5b567255-7703-4780-807c-7be8301ae99b=Role \
+    --id 7307b99d-b5a2-4ee7-b947-2fe8944baccf
+
+# grant admin consent for the permissions
+az ad app permission admin-consent --id 7307b99d-b5a2-4ee7-b947-2fe8944baccf
+
+```
+
+The application needs admin consent for the permissions as it is running as "application" and not on behalf of a 
+logged in user.
 
 ## Installation
 
