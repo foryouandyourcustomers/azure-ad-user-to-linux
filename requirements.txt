@@ -1,2 +1,4 @@
 azure-identity
 requests
+click
+azure-storage-blob
