@@ -8,110 +8,162 @@ import click
 import sys
 import requests
 import logging
-from azure.identity import ClientSecretCredential
 
-def return_azure_ad_graph_token(tenant_id, client_id, client_secret):
-    """
-    login to azure and create azure ad graph token
-
-    :param tenant_id:
-    :param client_id:
-    :param client_secret:
-    :return: str
-    """
-
-    credentials = ClientSecretCredential(
-        tenant_id=tenant_id,
-        client_id=client_id,
-        client_secret=client_secret
-    )
-
-    token = credentials.get_token('https://graph.microsoft.com/.default')
-
-    return token.token
-
-def return_azure_ad_group_members(group_id, token):
-    """
-    return a list of group members of the given group id
-    :param group_id:
-    :param token:
-    :return: list
-    """
-
-    # authorize request with the given token
-    headers = { 'Authorization': f'Bearer {token}'}
-    # select only certain fields from the user list
-    params = {
-        '$select': 'displayName,mail,userPrincipalName,accountEnabled'
-    }
-    #$select=displayName,givenName,postalCode,identities
-    r = requests.get(
-        url=f'https://graph.microsoft.com/v1.0/groups/{group_id}/members',
-        headers=headers,
-        params=params
-    )
-    r.raise_for_status()
-
-    members = r.json().get('value', [])
-    if not members:
-        raise ValueError(f'No members in group {group_id} found.')
-
-    return members
+from az import AzureAd, AzureContainer
+from users import User, sort_users_unique
 
 @click.command()
+@click.option(
+    '--loglevel',
+    required=False,
+    envvar='LOGLEVEL',
+    type=click.Choice(['CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG']),
+    default="INFO",
+    help="The loglevel for the script execution",
+    show_default=True
+)
 @click.option(
     '--tenant-id',
     required=True,
     envvar='AZURE_TENANT_ID',
-    help="The azure tenant id"
+    help="The azure tenant id",
+    show_default=True
 )
 @click.option(
     '--client-id',
     required=True,
     envvar='AZURE_CLIENT_ID',
-    help="The azure service principal client id"
+    help="The azure service principal client id",
+    show_default=True
 )
 @click.option(
     '--client-secret',
     required=True,
     envvar='AZURE_CLIENT_SECRET',
-    help="The azure service principal client secret"
+    help="The azure service principal client secret",
+    show_default=True
 )
 @click.option(
     '--azure-ad-groups',
     required=True,
     envvar='AZURE_AD_GROUPS',
-    help="A comma separated list of azure ad group ids to get users from"
+    help="A comma separated list of azure ad group ids to get users from",
+    show_default=True
 )
-def run(tenant_id, client_id, client_secret, azure_ad_groups):
+@click.option(
+    '--azure-ad-username-field',
+    required=True,
+    envvar='AZURE_AD_USERNAME_FIELD',
+    help="The field used to generate linux usernames from",
+    default='userPrincipalName',
+    show_default=True
+)
+@click.option(
+    '--storage-account-name',
+    required=True,
+    envvar='STORAGE_ACCOUNT_NAME',
+    help="The name of the storage account containing the users public ssh keys",
+    show_default=True
+)
+@click.option(
+    '--storage-account-container',
+    required=True,
+    envvar='STORAGE_ACCOUNT_CONTAINER',
+    help="The name oof the blob container in the storage account which contains the users public ssh keys",
+    show_default=True
+)
+@click.option(
+    '--ssh-keys-prefix',
+    envvar='SSH_KEYS_PREFIX',
+    help="Filter files in the storage account container by prefix.",
+    show_default=True
+)
+@click.option(
+    '--ssh-keys-suffix',
+    envvar='SSH_KEYS_SUFFIX',
+    required=True,
+    help="Filter files in the storage account container by prefix.",
+    default=".pub",
+    show_default=True
+)
+
+def run(loglevel, tenant_id, client_id, client_secret,
+        azure_ad_groups, azure_ad_username_field,
+        storage_account_name, storage_account_container,
+        ssh_keys_prefix, ssh_keys_suffix):
     """
-    run azure ad sync to local fs
-
-    :param tenant_id:
-    :param client_id:
-    :param client_secret:
-    :return:
+    synchronize azure ad users with local user accounts
     """
 
-    # login to azure with the given service principal and return azure graph bearer token
-    token = return_azure_ad_graph_token(
-        tenant_id=tenant_id,
-        client_id=client_id,
-        client_secret=client_secret
-    )
+    logging.basicConfig(level=loglevel)
+    # set warning loglevel for azure modules
+    # we dont want to spam the log if set to debug or info!
+    logging.getLogger('azure.core').setLevel(logging.ERROR)
+    logging.getLogger('azure.identity').setLevel(logging.ERROR)
+    logging.getLogger('urllib3').setLevel(logging.ERROR)
+    logging.getLogger('msal').setLevel(logging.ERROR)
 
-    # retrieve users from the specified groups
+    # initialize azure ad client
+    try:
+        azad = AzureAd(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret
+        )
+    except Exception as e:
+        logging.error(f'Unable to connect to Azure AD')
+        raise e
+
+    # intialize storage account client
+    try:
+        azcontainer = AzureContainer(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret,
+            storage_account_name=storage_account_name,
+            storage_account_container=storage_account_container
+        )
+    except Exception as e:
+        logging.error(f'Unable to connect to Azure Storage Account')
+        raise e
+
+    # retrieve azure ad users from the specified groups
     members = []
     for g in azure_ad_groups.split(','):
         try:
-            m = return_azure_ad_group_members(group_id=g, token=token)
+            for m in azad.get_group_members(group_id=g):
+                members.append(
+                    User(**m, ssh_keys_prefix=ssh_keys_prefix, ssh_keys_suffix=ssh_keys_suffix)
+                )
         except Exception as e:
             logging.warning(e)
-
-        members.extend(m)
+    members = sort_users_unique(members)
 
     # retrieve ssh keys for each of the retrieved azure ad users
     # from keyvault
+    blobs = []
+    try:
+        blobs = azcontainer.get_blobs(prefix=ssh_keys_prefix, suffix=ssh_keys_suffix)
+    except Exception as e:
+        logging.warning(e)
+
+    # checking returned blobs against username list
+    # and download any blob that matches a user account
+    # an ssh key is always set up in this format
+    # <prefix><user principal name><.optional identifier><suffix>
+    for m in members:
+        if m.account_enabled:
+            keys = [k for k in blobs if m.valid_ssh_keys.search(k.get('name', ''))]
+            if not keys:
+                logging.warning(f'No public ssh keys found for {m.user_principal_name}')
+            else:
+                # download the keys and store them in the user object
+                for k in keys:
+                    try:
+                        m.ssh_keys.append(azcontainer.download_blob(k.get('name')))
+                    except Exception as e:
+                        logging.warning(f'Unable to download ssh pub key {k}: {e}')
+
 
     # ensure local managed group exists
 
@@ -134,8 +186,8 @@ def run(tenant_id, client_id, client_secret, azure_ad_groups):
 if __name__ == '__main__':
     try:
         run()
-    except Exception as e:
-        logging.error(e)
+    except Exception as error:
+        logging.error(error)
         sys.exit(1)
 
 

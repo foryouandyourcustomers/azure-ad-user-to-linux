@@ -116,6 +116,10 @@ tbd.
 
 ## Usage
 
+### Prepare ssh public keys
+- generate public key
+- upload key to storage account container in format [prefix][userPrincipalName][.identifier][suffix]
+
 ## Limitations
 
 - The script currently only works with password authentication for the Azure Application Registration (service principal)
