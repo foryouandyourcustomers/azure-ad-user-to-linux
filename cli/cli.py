@@ -8,7 +8,6 @@ def _execute(cli):
     result = subprocess.run(cli, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
 
     if result.stderr:
-        logging.error(f'CLI {cli} returnted stderr: {result.stderr}')
         raise ValueError(result.stderr)
 
     return result.stdout
@@ -47,3 +46,34 @@ class Cli(object):
             )
         except ValueError as e:
             raise ValueError(f'Unable to create group {name}: {e}')
+
+    @staticmethod
+    def useradd(username):
+        """
+        create local linux user
+        :param username:
+        :return:
+        """
+
+        try:
+            _execute(
+                cli=f'/usr/sbin/useradd {username}'
+            )
+        except ValueError as e:
+            raise ValueError(f'Unable to create user {username}: {e}')
+
+    @staticmethod
+    def joingroup(username, group):
+        """
+        join user to group
+        :param username: name of the user to join
+        :param group: name of the group to join
+        :return:
+        """
+
+        try:
+            _execute(
+                cli=f'/usr/sbin/usermod -a -G {group} {username}'
+            )
+        except ValueError as e:
+            raise ValueError(f'Unable to join user {username} to group {group}: {e}')

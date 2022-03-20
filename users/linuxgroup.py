@@ -36,19 +36,30 @@ class LinuxGroup(object):
             Cli.groupadd(name=self.name)
 
 
+    def getent(self):
+        """
+        returns the split getent for the group database entry
+
+        :return: getent list
+        """
+
+        group_entry = Cli.getent(database='group', key=self.name)
+        if group_entry:
+            # split group entry 'group:x:id:members'
+            return group_entry.decode().strip().split(':')
+        return None
+
     def get_id(self):
         """
         returns the id of the group
         :return: id of group
         """
 
-        group_entry = Cli.getent(database='group', key=self.name)
-        if group_entry:
-            # split group entry 'group:x:id:members'
-            g = group_entry.decode().strip().split(':')
+        g = self.getent()
+        if g:
             return g[2]
-
         return None
+
 
     def get_members(self):
         """
@@ -56,11 +67,7 @@ class LinuxGroup(object):
         :return: list of members
         """
 
-        group_entry = Cli.getent(database='group', key=self.name)
-        if group_entry:
-            # split group entry 'group:x:id:members'
-            g = group_entry.decode().strip().split(':')
-            if g[3]:
-                return g[3].split(',')
-
+        g = self.getent()
+        if g:
+            return g[3].split(',')
         return None

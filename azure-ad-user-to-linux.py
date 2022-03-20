@@ -48,8 +48,9 @@ from users import AdUser, sort_ad_users_unique, LinuxGroup, LinuxUser
     '--azure-ad-groups',
     required=True,
     envvar='AZURE_AD_GROUPS',
-    help="A comma separated list of azure ad group ids to get users from",
-    show_default=True
+    help="A space separated list of azure ad group ids to get users from",
+    show_default=True,
+    multiple=True
 )
 @click.option(
     '--azure-ad-username-field',
@@ -95,12 +96,19 @@ from users import AdUser, sort_ad_users_unique, LinuxGroup, LinuxUser
     default="azure-ad-users-to-linux",
     show_default=True
 )
-
+@click.option(
+    '--additional-linux-groups',
+    envvar='ADDITIONAL_LINUX_GROUPS',
+    required=False,
+    help="Space separated list of additional groups to join the managed accounts to.",
+    show_default=True,
+    multiple=True
+)
 def run(loglevel, tenant_id, client_id, client_secret,
         azure_ad_groups, azure_ad_username_field,
         storage_account_name, storage_account_container,
         ssh_keys_prefix, ssh_keys_suffix,
-        linux_group_name):
+        linux_group_name, additional_linux_groups):
     """
     synchronize azure ad users with local user accounts
     """
@@ -139,15 +147,16 @@ def run(loglevel, tenant_id, client_id, client_secret,
 
     # ensure local managed group exists to identify user accounts managed by azure-ad-users-to-linux
     try:
-        lxgroup = LinuxGroup(name=linux_group_name)
-        lxgroup.create()
+        azure_ad_users_to_linux_managed_group = LinuxGroup(name=linux_group_name)
+        azure_ad_users_to_linux_managed_group.create()
     except Exception as e:
         logging.error(f'Unable to create linux group {linux_group_name}')
         raise e
 
     # retrieve azure ad users from the specified groups
     azure_ad_users = []
-    for g in azure_ad_groups.split(','):
+    print(azure_ad_groups)
+    for g in azure_ad_groups:
         group_members = []
         try:
             group_members = azad.get_group_members(group_id=g, additional_fields=[azure_ad_username_field])
@@ -201,12 +210,31 @@ def run(loglevel, tenant_id, client_id, client_secret,
         linux_users.append(lu)
 
     # get local users in managed group
-    managed_group_members = lxgroup.get_members()
+    linux_users_in_managed_group = []
+    for u in azure_ad_users_to_linux_managed_group.get_members():
+        linux_users_in_managed_group.append(LinuxUser(username=u))
 
+    #
+    # from here on we manage users and group memberships
+    # - the linux_users list contains all linux users to create or update on the system, it only contains azure ad users which are currently enabled
+    #   and which username field can be converted to a valid linux username
+    # - the linux_users_in_managed_group list contains all users currently in the managed group. this users need to also exist in the linux_users list,
+    #   else the user accounts are disabled
+    #
 
+    # first loop trough all linux users
+    # create the user if it not exists
+    # add the retrieved ssh keys
+    # add user to additional user groups
+    for u in linux_users:
+        try:
+            u.create()
+            u.authorized_keys()
+            u.group_memberships(groups=additional_linux_groups)
+        except Exception as e:
+            logging.warning(f'Unable to manage user {u.username}: {e}')
 
-    # verify local users against retrieved ad user objects
-    # is the user enabled? # does the user exist in azure ad and locally?
+    # check if local linux users in the group
 
     # create missing local users
     # add local users to managed group and to additional groups (for sudo etc)
