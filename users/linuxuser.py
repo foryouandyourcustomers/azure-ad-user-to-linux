@@ -84,6 +84,16 @@ class LinuxUser(object):
             return int(p[3])
         return None
 
+    def get_login_shell(self):
+        """
+        returns the login shell of the user
+        :return: id of group
+        """
+
+        p = self.getent()
+        if p:
+            return p[6]
+        return None
 
     def authorized_keys(self,
                         authorized_keys_file='.ssh/authorized_keys',
@@ -145,18 +155,39 @@ class LinuxUser(object):
             mode=0o0644
         )
 
-    def group_memberships(self, groups):
+    def group_memberships(self, managed_group, additional_groups):
         """
         join the user account to additional linux groups
         the function only adds users to groups, never removes them
 
-        :param groups: list of groups to join users too
+        :param additional_groups: list of additional groups the user should be joined to
+        :param managed_group: default managed group all users need to be joined to
         :return:
         """
 
-        for g in groups:
+        Cli.joingroup(username=self.username, group=managed_group)
+
+        for g in additional_groups:
             try:
-                Cli.joingroup(self.username, g)
+                Cli.joingroup(username=self.username, group=g)
             except Exception as e:
                 logging.warning(e)
 
+
+    def login_shell(self, login_shell='/bin/bash'):
+        """
+        set login shell of user to /bin/bash if set to /sbin/nologin
+        if set to a different login shell dont touch it
+        :param login_shell:
+        :return:
+        """
+
+        current_shell = self.get_login_shell()
+
+        # nothing to do here
+        if current_shell == login_shell:
+            return None
+
+        # only change shell if its set to nologin
+        if current_shell == '/sbin/nologin':
+            Cli.setloginshell(username=self.username, shell=login_shell)

@@ -69,5 +69,9 @@ class LinuxGroup(object):
 
         g = self.getent()
         if g:
-            return g[3].split(',')
+            members = []
+            for m in g[3].split(','):
+                if m:
+                    members.append(m)
+            return members
         return None

@@ -77,3 +77,19 @@ class Cli(object):
             )
         except ValueError as e:
             raise ValueError(f'Unable to join user {username} to group {group}: {e}')
+
+    @staticmethod
+    def setloginshell(username, shell):
+        """
+        set the login shell of the user
+        :param username:
+        :param shell:
+        :return:
+        """
+
+        try:
+            _execute(
+                cli=f'/usr/sbin/usermod --shell {shell} {username}'
+            )
+        except ValueError as e:
+            raise ValueError(f'Unable to set login shell of user {username} to {shell}: {e}')

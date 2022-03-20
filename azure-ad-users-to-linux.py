@@ -155,7 +155,6 @@ def run(loglevel, tenant_id, client_id, client_secret,
 
     # retrieve azure ad users from the specified groups
     azure_ad_users = []
-    print(azure_ad_groups)
     for g in azure_ad_groups:
         group_members = []
         try:
@@ -209,42 +208,37 @@ def run(loglevel, tenant_id, client_id, client_secret,
         # linux users list
         linux_users.append(lu)
 
-    # get local users in managed group
-    linux_users_in_managed_group = []
-    for u in azure_ad_users_to_linux_managed_group.get_members():
-        linux_users_in_managed_group.append(LinuxUser(username=u))
-
-    #
-    # from here on we manage users and group memberships
-    # - the linux_users list contains all linux users to create or update on the system, it only contains azure ad users which are currently enabled
-    #   and which username field can be converted to a valid linux username
-    # - the linux_users_in_managed_group list contains all users currently in the managed group. this users need to also exist in the linux_users list,
-    #   else the user accounts are disabled
-    #
-
     # first loop trough all linux users
     # create the user if it not exists
     # add the retrieved ssh keys
     # add user to additional user groups
     for u in linux_users:
         try:
+            # create user if it doesnt exist
             u.create()
+            # set authorized keys
             u.authorized_keys()
-            u.group_memberships(groups=additional_linux_groups)
+            # add user to groups
+            u.group_memberships(managed_group=azure_ad_users_to_linux_managed_group.name, additional_groups=additional_linux_groups)
+            # enable user login shell
+            u.login_shell()
         except Exception as e:
             logging.warning(f'Unable to manage user {u.username}: {e}')
 
-    # check if local linux users in the group
+    # with the user managed and setup
+    # get all users in the managed group
+    linux_users_in_managed_group = []
+    for u in azure_ad_users_to_linux_managed_group.get_members():
+        linux_users_in_managed_group.append(LinuxUser(username=u))
 
-    # create missing local users
-    # add local users to managed group and to additional groups (for sudo etc)
+    # pop all users which should be managed from the list
+    # the remaining user accounts need to be disabled
+    linux_users_in_managed_group_but_not_in_azure_ad = \
+        [u for u in linux_users_in_managed_group if u.username not in [e.username for e in linux_users]]
+    for u in linux_users_in_managed_group_but_not_in_azure_ad:
+        logging.warning(f'Disabling user {u.username}')
+        u.login_shell(login_shell='/sbin/nologin')
 
-    # disable local users by setting nologin shell
-
-    # iterate over local users and manage ssh keys in authorized keys file
-    # are the public keys in the authorized_keys? if not add them
-    # are there any other authorized keys in the file which arent in the storage accoutn?
-    # remove them
 
 if __name__ == '__main__':
     try:
