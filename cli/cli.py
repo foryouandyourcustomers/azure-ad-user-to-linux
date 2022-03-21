@@ -93,3 +93,20 @@ class Cli(object):
             )
         except ValueError as e:
             raise ValueError(f'Unable to set login shell of user {username} to {shell}: {e}')
+
+    @staticmethod
+    def getgroupmembership(username):
+        """
+        return a list of groups the user is member of
+        :param username:
+        :return: list of group names
+        """
+
+        try:
+            groups = _execute(
+                cli=f'/usr/bin/id -Gn {username}'
+            )
+        except ValueError as e:
+            raise ValueError(f'Unable to get group memberships of user {username}: {e}')
+
+        return groups.decode().strip().split(' ')

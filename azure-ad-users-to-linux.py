@@ -185,7 +185,7 @@ def run(loglevel, tenant_id, client_id, client_secret,
     for u in azure_ad_users:
         # set linux user object with a hopefully valid linux username ;-)
         try:
-            lu = LinuxUser(u.get_linux_username(username_field=azure_ad_username_field))
+            lu = LinuxUser(username=u.get_linux_username(username_field=azure_ad_username_field))
         except Exception as e:
             logging.warning(f'Unable to create linux user object: {e}')
             continue
@@ -214,6 +214,8 @@ def run(loglevel, tenant_id, client_id, client_secret,
     # add user to additional user groups
     for u in linux_users:
         try:
+            # check if the user already exists, if it exists make sure user is member in the managed group
+            u.check_managed_user(managed_group=azure_ad_users_to_linux_managed_group.name)
             # create user if it doesnt exist
             u.create()
             # set authorized keys

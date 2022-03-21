@@ -95,6 +95,19 @@ class LinuxUser(object):
             return p[6]
         return None
 
+    def check_managed_user(self, managed_group):
+        """
+        check if the user already exists and if it exists
+        make sure its in the managed
+        :return:
+        """
+
+        if not self.exists():
+            return
+
+        if not managed_group in Cli.getgroupmembership(self.username):
+            raise ValueError(f'User {self.username} already exists but not member in {managed_group}')
+
     def authorized_keys(self,
                         authorized_keys_file='.ssh/authorized_keys',
                         authorized_keys_comment='managed by azure-ad-user-to-linux'):
