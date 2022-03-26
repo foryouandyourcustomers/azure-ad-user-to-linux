@@ -1,34 +1,39 @@
 # azure-ad-user-to-linux
 
-We don't want to administer our own user accounts on linux servers. Instead, we want to leverage
-Azure AD for the account management.
+This script allows "syncing" of Azure AD users to linux.
+The goal is to have a simply user sync without the need to join your linux systems to Azure AD or change
+the AD user schema.
 
-As there is no daemon or service which works out of the box for non Azure VMs and Linux Servers which aren't members
-of an AD we need to get creative.
-
-The elegant way would be to create our own pam.d modules but this makes everything more complicated than
-it needs to be. Instead, we use a simple script to retrieve Azure AD accounts and public keys and manage the 
-local users accordingly.
-
-The ssh public keys are stored in a Storage Account so we do not have to adapt any schemas or add complex user 
-manuals on how to add ssh keys to an Azure AD profile.
 
 ## Overview
 
-The script is executed as cronjob on each linux server (or it can be executed manually)
+The script is executed as cronjob on the linux server:
 
-1) It retrieves all users which are members of one or more AD groups
-2) It checks if the user accounts retrieved from AD exist on the linux server. It compares the AD username with all local
-user accounts in a specific linux group. This group check is so we don't disable users which were never synced
-from azure ad!
-   1) If the user exist it verifies if the user is enabled in AD, if not it sets the users login shell to `nologin`
-   2) If the user doesnt exist it will create it with the information from the Azure AD user.
-3) It retrieves SSH public keys stored as text file (one public key, one text file) from the specified azure storage account container
-   1) the container uses a simple folder structure `/<userPrincipalName>/key1.txt`, `/<userPrincipalName>/key2.txt`
-4) It checks if the retrieved ssh public key exists in the users `authorized_keys` file.
-   1) if it doesnt exist add it
-   2) if there are further managed ssh keys which aren't in the storage account remove them. It verifies if the key is managed by the script by checking the keys comment
-
+1) It retrieves all users who are members of one or more AD groups
+2) It retrieves public ssh keys from a storage account blob for each of the users
+3) It verifies synced users against linux by checking linux group membership
+   1) if the AD user does not exist on the linux server create it
+      1) create user, 
+      2) add user to groups, 
+      3) add public ssh key to users authorized keys file
+   2) if the AD user exists on the linux server but isnt member of linux group ignore it
+   3) if the AD user is disabled but exists on the linux server disable it on the linux server
+ 
+```mermaid
+flowchart TD
+    A[Start] --> B
+    B[Retrive Users from Azure AD] --> C
+    C[Download public ssh keys from Azure Storage] --> D
+    D[Loop trough Azure AD users] --> E{User exists?}
+    E --> |Yes| F{Is user member\nof Azure AD \nlinux group?}
+    E --> |No| I[Create linux user]
+    I --> G
+    F --> |Yes| G[Update group membership]
+    F --> |No, ignore user| D
+    G --> H[Update auhorized keys]
+    H --> Z[End]
+```
+  
 ## Requirements
  
 - Administrative rights in Azure 
@@ -110,17 +115,108 @@ az ad app permission admin-consent --id 7307b99d-b5a2-4ee7-b947-2fe8944baccf
 The application needs admin consent for the permissions as it is running as "application" and not on behalf of a 
 logged in user.
 
-## Installation
-
-tbd.
-
-## Usage
-
 ### Prepare ssh public keys
 - generate public key
 - upload key to storage account container in format [prefix][userPrincipalName][.identifier][suffix]
+
+#### Example public key file names
+
+When running with the default script configuration there is no `prefix` set and the suffix is set to `.pub`.
+Valid public key files for the user with the userPrincipalName `seh@foryouandyourcustomers.com` are:
+- seh@foryouandyourcustomers.com.pub
+- seh@foryouandyourcustomers.com.secondkey.pub
+- seh@foryouandyourcustomers.com.YETANOTHERKEY.pub
+
+## Installation
+
+To install this script clone the repository and link the systemd files.
+
+```bash
+# first, clone the repository
+cd /usr/local
+sudo git clone https://github.com/foryouandyourcustomers/azure-ad-users-to-linux.git
+
+# navigate to the cloned repository and create the python virtual environment
+cd /usr/local/azure-ad-users-to-linux
+sudo python3 -m venv venv
+sudo ./venv/bin/pip install --upgrade pip
+sudo ./venv/bin/pip install -r requirements.txt 
+
+# the configuration file needs to be accessible by the root user, no one else.
+cd /usr/local/azure-ad-users-to-linux
+sudp cp ./configuration.env.example ./configuration.env
+sudo chmod 600 ./configuration.env
+
+# now prepare the configuration file
+# add the service principal tenant, client id and secret
+# add the azure ad user group object ids
+# add the storage account and container names
+# (optional) add additional linux user groups the managed users should be added too (e.g. docker, wheel, ...)
+sudo vim ./configuration.env
+
+# next install the systemd service
+sudo systemctl link /usr/local/azure-ad-users-to-linux/azure-ad-users-to-linux.service
+sudo systemctl daemon-reload
+sudo systemctl enable azure-ad-users-to-linux
+sudo systemctl start azure-ad-users-to-linux
+```
+
+## Usage
+
+The python script uses environment variables or command line options for it's configuration.
+
+```bash
+$ ./azure-ad-users-to-linux.py --help
+Usage: azure-ad-users-to-linux.py [OPTIONS]
+
+  synchronize azure ad users with local user accounts
+
+Options:
+  --loglevel [CRITICAL|ERROR|WARNING|INFO|DEBUG]
+                                  The loglevel for the script execution
+                                  [default: INFO]
+  --tenant-id TEXT                The azure tenant id  [required]
+  --client-id TEXT                The azure service principal client id
+                                  [required]
+  --client-secret TEXT            The azure service principal client secret
+                                  [required]
+  --azure-ad-groups TEXT          A space separated list of azure ad group ids
+                                  to get users from  [required]
+  --azure-ad-username-field TEXT  The field used to generate linux usernames
+                                  from  [default: userPrincipalName; required]
+  --storage-account-name TEXT     The name of the storage account containing
+                                  the users public ssh keys  [required]
+  --storage-account-container TEXT
+                                  The name oof the blob container in the
+                                  storage account which contains the users
+                                  public ssh keys  [required]
+  --ssh-keys-prefix TEXT          Filter files in the storage account
+                                  container by prefix.
+  --ssh-keys-suffix TEXT          Filter files in the storage account
+                                  container by prefix.  [default: .pub;
+                                  required]
+  --linux-group-name TEXT         Group identifing users managed by the azure-
+                                  ad-user-to-linux script.  [default: azure-
+                                  ad-users-to-linux; required]
+  --additional-linux-groups TEXT  Space separated list of additional groups to
+                                  join the managed accounts to.
+  --help                          Show this message and exit
+```
 
 ## Limitations
 
 - The script currently only works with password authentication for the Azure Application Registration (service principal)
 - The script assumes the authorized key file is `${HOME}/.ssh/authorized_keys`
+
+## Testing
+
+The script modifies your groups and passwd files. To test the script use the given docker-compose file.
+
+```bash
+# build and start the container
+docker-compose up -d
+# attach to the container
+docker exec -ti azure-ad-user-to-linux_azure-ad-users-to-linux_1 /bin/bash
+# setup the virtualenv and systemd service
+# happy testing ;-)
+```
