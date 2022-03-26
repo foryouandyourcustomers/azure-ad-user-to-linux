@@ -123,6 +123,8 @@ class LinuxUser(object):
         # setup full path to the authorized keys file
         authorized_keys = os.path.join(self.get_home(), authorized_keys_file)
 
+        logging.info(f'Update authorized keys file {authorized_keys}')
+
         # make sure the auth to the authorized keys file exists
         os.makedirs(
             name=os.path.dirname(authorized_keys),
@@ -182,6 +184,7 @@ class LinuxUser(object):
 
         for g in additional_groups:
             try:
+                logging.info(f'Add user {self.username} to linux group {g}')
                 Cli.joingroup(username=self.username, group=g)
             except Exception as e:
                 logging.warning(e)
@@ -203,4 +206,5 @@ class LinuxUser(object):
 
         # only change shell if its set to nologin
         if current_shell == '/sbin/nologin':
+            logging.info(f'Set users {self.username} login shell to {login_shell}')
             Cli.setloginshell(username=self.username, shell=login_shell)
