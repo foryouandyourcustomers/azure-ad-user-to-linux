@@ -6,12 +6,10 @@
 
 FROM registry.access.redhat.com/ubi8/ubi-init
 
-ADD . /usr/local/azure-ad-user-to-linux/
-RUN yum install -y python3 \
-    && python3 -m venv /usr/local/azure-ad-user-to-linux/venv \
-    && /usr/local/azure-ad-user-to-linux/venv/bin/pip3 install --upgrade pip \
-    && /usr/local/azure-ad-user-to-linux/venv/bin/pip3 install -r \
-      /usr/local/azure-ad-user-to-linux/requirements.txt \
-    && chmod +x \
-      /usr/local/azure-ad-user-to-linux/azure-ad-user-to-linux.py \
-      /usr/local/azure-ad-user-to-linux/azure-ad-user-to-linux.sh
+# install python and ssh, sudo is just used to allow testing all
+# setup instructions in the readme
+RUN yum install -y openssh-server openssh-clients python3 sudo \
+    && systemctl enable sshd \
+    && ssh-keygen -A
+
+CMD [ "/sbin/init" ]

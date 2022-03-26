@@ -1,0 +1,17 @@
+version: "3"
+services:
+  azure-ad-users-to-linux:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    tmpfs: /run
+    ports:
+      - "22222:22/tcp"
+    privileged: true
+    volumes:
+      - type: bind
+        source: .
+        target: /usr/local/azure-ad-users-to-linux
+    working_dir: /usr/local/azure-ad-users-to-linux
+    env_file:
+      - configuration.env
