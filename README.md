@@ -142,7 +142,8 @@ sudo python3 -m venv venv
 sudo ./venv/bin/pip install --upgrade pip
 sudo ./venv/bin/pip install -r requirements.txt 
 
-# the configuration file needs to be accessible by the root user, no one else.
+# next copy the example configuration file. the configuration file contains the client id and secret and should 
+# therefore only be accessible by the root user
 cd /usr/local/azure-ad-users-to-linux
 sudp cp ./configuration.env.example ./configuration.env
 sudo chmod 600 ./configuration.env
