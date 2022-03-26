@@ -1,0 +1,12 @@
+[Unit]
+Description=Synchronize Azure AD users with linux users
+After=multi-user.target
+
+[Service]
+Type=simple
+Restart=always
+EnvironmentFile=/usr/local/azure-ad-users-to-linux/configuration.env
+ExecStart=/usr/local/azure-ad-users-to-linux/azure-ad-users-to-linux.sh
+
+[Install]
+WantedBy=multi-user.target

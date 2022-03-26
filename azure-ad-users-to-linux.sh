@@ -10,4 +10,4 @@ SCRIPT="${SCRIPT_DIR}/azure-ad-users-to-linux.py"
 [ ! -d "${SCRIPT_DIR}/venv" ] && echo "virtual env not found. aborting." && exit 1
 [ ! -f "${SCRIPT}" ] && echo "script ${SCRIPT} not found. aborting." && exit 1
 
-"${SCRIPT_DIR}/venv/bin/python3" "${SCRIPT}" "$@"
+exec "${SCRIPT_DIR}/venv/bin/python3" "${SCRIPT}" "$@"
